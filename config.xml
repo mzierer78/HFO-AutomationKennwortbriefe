@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Attention, Activate a function should be checked First with Debug Options -->
+<Configuration>
+    <debug>true</debug>
+    <LogFile Name="Default" />
+    <Setting1 Name="Value" Type="Value" />
+</Configuration>
