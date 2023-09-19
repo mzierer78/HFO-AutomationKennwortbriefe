@@ -93,18 +93,38 @@ Write-Log -Message "start region read data from XML file"
 
 # prepare Variables
 [string]$CurrentUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-[string]$Setting1Name = $DataSource.Configuration.Setting1.Name
-[string]$Setting1Type = $DataSource.Configuration.Setting1.Type
+[string]$SearchPathADUser = $DataSource.Configuration.SearchPathADUser.Name
+[string]$GroupUser = $DataSource.Configuration.GroupUser.samAccountName
 
 # dump Variables used:
 Write-Log -Message "Dumping read values to Log..."
 Write-Log -Message ('Current User Context:            {0}' -f $CurrentUser)
-Write-Log -Message ('Setting1Name:                    {0}' -f $DataSource.Configuration.Setting1.Name)
-Write-Log -Message ('Setting1Type:                    {0}' -f $DataSource.Configuration.Setting1.Type)
+Write-Log -Message ('SearchPathADUser:                {0}' -f $DataSource.Configuration.SearchPathADUser.Name)
+Write-Log -Message ('GroupUser:                       {0}' -f $DataSource.Configuration.GroupUser.samAccountName)
 #foreach ($Service in $DataSource.Configuration.Service){Write-Log -Message ('Service Name:                    {0}' -f $Service.Name)}
 Write-Log -Message "end region read data from XML file"
 #endregion
 
+#region query AD Users
+Write-Log -Message "start region query AD Users"
+
+Write-Log -Message "try loading ActiveDirectory Module"
+try {
+  Import-Module ActiveDirectory
+  Write-Log -Message "PowerShell Module ActiveDirectory successfully loaded"
+}
+catch {
+  Write-Log -Message "Loading PowerShell Module ActiveDirectory failed"
+}
+
+Write-Log -Message ('Build Array $ADUsers by resolving group members of {0}' -f $GroupUser)
+[array]$ADUsers = @()
+#$ADUsers = Get-ADUser -Filter * -SearchBase $SearchPathADUser
+$ADUsers = Get-ADGroupMember -Identity $GroupUser
+Write-Log -Message ('finished resolving users. Array contains {0} users' -f $ADUsers.Count)
+
+Write-Log -Message "end region query AD Users"
+#endregion
 
 #region Cleanup
 Remove-Variable -Name DataSource

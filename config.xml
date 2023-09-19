@@ -2,6 +2,7 @@
 <!-- Attention, Activate a function should be checked First with Debug Options -->
 <Configuration>
     <debug>false</debug>
-    <LogFile Name="Default" />
-    <Setting1 Name="Value" Type="Value" />
+    <LogFile Name="D:\NoBackup\HFO-AutomationKennwortbriefe\HFO-AutomationKennwortbriefe.log" />
+    <SearchPathADUser Name="OU=Benutzer,OU=HFO,DC=itshessen,DC=hessen,DC=de" />
+    <GroupUser samAccountName="sicHFObenutzer" ObjectSid="" />
 </Configuration>
