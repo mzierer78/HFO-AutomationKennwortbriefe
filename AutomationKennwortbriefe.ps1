@@ -93,19 +93,24 @@ Write-Log -Message "start region read data from XML file"
 
 # prepare Variables
 [string]$CurrentUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-[string]$SearchPathADUser = $DataSource.Configuration.SearchPathADUser.Name
 [string]$GroupUser = $DataSource.Configuration.GroupUser.samAccountName
+[string]$MaxObjects = $DataSource.Configuration.GroupUser.MaxObjects
+[string]$SearchPathADUser = $DataSource.Configuration.SearchPathADUser.Name
+[string]$SearchStringFA = $DataSource.Configuration.SearchStringFA.Name
 
 # dump Variables used:
 Write-Log -Message "Dumping read values to Log..."
 Write-Log -Message ('Current User Context:            {0}' -f $CurrentUser)
-Write-Log -Message ('SearchPathADUser:                {0}' -f $DataSource.Configuration.SearchPathADUser.Name)
-Write-Log -Message ('GroupUser:                       {0}' -f $DataSource.Configuration.GroupUser.samAccountName)
+Write-Log -Message ('GroupUser:                       {0}' -f $GroupUser)
+Write-Log -Message ('MaxObjects:                      {0}' -f $MaxObjects)
+Write-Log -Message ('SearchPathADUser:                {0}' -f $SearchPathADUser)
+Write-Log -Message ('SearchStringFA:                  {0}' -f $SearchStringFA)
 #foreach ($Service in $DataSource.Configuration.Service){Write-Log -Message ('Service Name:                    {0}' -f $Service.Name)}
 Write-Log -Message "end region read data from XML file"
 #endregion
 
 #region query AD Users
+Write-Log -Message "::"
 Write-Log -Message "start region query AD Users"
 
 Write-Log -Message "try loading ActiveDirectory Module"
@@ -120,10 +125,40 @@ catch {
 Write-Log -Message ('Build Array $ADUsers by resolving group members of {0}' -f $GroupUser)
 [array]$ADUsers = @()
 #$ADUsers = Get-ADUser -Filter * -SearchBase $SearchPathADUser
-$ADUsers = Get-ADGroupMember -Identity $GroupUser
+$ADUsers = Get-ADGroupMember -Identity $GroupUser | Select-Object -First $MaxObjects
 Write-Log -Message ('finished resolving users. Array contains {0} users' -f $ADUsers.Count)
+Write-Log -Message "::"
+
+Write-Log -Message ('Build Array $FAUsers by checking for group membership in {0}' -f $SearchStringFA)
+[array]$FAUsers = @()
+[array]$MailingUsers = @()
+$SearchString = $SearchStringFA + "*"
+$Counter = 0
+$FoundUsers = $ADUsers.Count
+foreach ($ADUser in $ADUsers) {
+  $Counter++
+  $percentComplete = ($Counter / $ADUsers.Count) * 100
+  $CurrentItem = $ADUser.name
+  Write-Progress -Status "Processing item $CurrentItem" -PercentComplete $percentComplete -Activity "Filtering $FoundUsers Users found in previous step"
+  [array]$FAGroups = @()
+  $FAGroups = Get-ADPrincipalGroupMembership -Identity $ADUser.samAccountName | Where-Object { $_.Name -like $SearchString }
+  if ((($FaGroups.count) -ne "0")) {
+    if ((($FAGroups.count) -gt "1")) {
+      $MailingUsers += $ADUser
+    } else {
+      $FAUsers += $ADUser
+    }
+  }
+  Remove-Variable -Name FAGroups
+  Remove-Variable -Name ADUser
+  Remove-Variable -Name CurrentItem
+}
+Write-Log -Message ('$FAUsers contains {0} Users for further processing' -f $FAUsers.Count)
+Write-Log -Message ('$MailingUsers contains {0} Users for further processing' -f $MailingUsers.Count)
+Write-Log -Message "::"
 
 Write-Log -Message "end region query AD Users"
+Write-Log -Message "::"
 #endregion
 
 #region Cleanup
