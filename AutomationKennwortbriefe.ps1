@@ -71,6 +71,29 @@ function  Write-Log {
       $msgToWrite | out-file -FilePath $global:Logfile -Append -Encoding utf8
     }
   }
+
+  function Get-FAIDGroup {
+    #[CmdletBinding()]
+    param (
+      $Name
+    )
+    #Write-Log -Message "start function Get-ADGroupDescription"
+    $group = Get-ADGroup -Filter {Name -eq $Name} -Properties DESCRIPTION
+    $string = $group.description
+    if ($string -eq $null) {
+      #description field is empty, setting value to 0000
+      $FAID = "0000"
+    } else {
+      $FAID = ($group.description).Substring(0,4)
+    }
+    if ($FAID -notmatch '^\d+$') {
+      #description field contains no FA ID, setting value to 0001
+      $FAID = "0001"
+    }
+    
+    #Write-Log -Message "end function Get-ADGroupDescription"
+    Return $FAID
+  }
 #endregion
 
 #region write basic infos to log
@@ -97,6 +120,7 @@ Write-Log -Message "start region read data from XML file"
 [string]$MaxObjects = $DataSource.Configuration.GroupUser.MaxObjects
 [string]$SearchPathADUser = $DataSource.Configuration.SearchPathADUser.Name
 [string]$SearchStringFA = $DataSource.Configuration.SearchStringFA.Name
+[string]$Telefonliste = $DataSource.Configuration.Telefonliste.FileName
 
 # dump Variables used:
 Write-Log -Message "Dumping read values to Log..."
@@ -105,8 +129,81 @@ Write-Log -Message ('GroupUser:                       {0}' -f $GroupUser)
 Write-Log -Message ('MaxObjects:                      {0}' -f $MaxObjects)
 Write-Log -Message ('SearchPathADUser:                {0}' -f $SearchPathADUser)
 Write-Log -Message ('SearchStringFA:                  {0}' -f $SearchStringFA)
+Write-Log -Message ('Telefonliste:                    {0}' -f $Telefonliste)
 #foreach ($Service in $DataSource.Configuration.Service){Write-Log -Message ('Service Name:                    {0}' -f $Service.Name)}
 Write-Log -Message "end region read data from XML file"
+#endregion
+
+#region Telefonliste
+Write-Log -Message "::"
+Write-Log -Message "start region Telefonliste"
+
+$PhoneListPath = Join-Path -Path $here -ChildPath $Telefonliste
+
+#use locally installed excel to access data
+<#create a com object for the application#>
+$ExcelObj = New-Object -ComObject Excel.Application
+$ExcelObj.Visible = $false
+
+<#open data source#>
+$ExcelWorkBook = $ExcelObj.Workbooks.open($PhoneListPath)
+
+<#select sheet containing FA Address list#>
+$ExcelWorkSheet = $ExcelWorkBook.Sheets.Item("Adressen der Dienststellen")
+$UsedRange = $ExcelWorkSheet.UsedRange
+$UsedRows = $usedRange.Rows.Count
+
+$Dienststellen = @()
+for ($i = 2; $i -le $UsedRows; $i++) {
+  <# Action that will repeat until the condition is met #>
+  $ColumnA = "A" + $i
+  $ColumnB = "B" + $i
+  $ColumnC = "C" + $i
+  $ColumnD = "D" + $i
+  $ColumnE = "E" + $i
+  $DstName = $ExcelWorkSheet.Range($ColumnA).Text
+  $DstID = $ExcelWorkSheet.Range($ColumnB).Text
+  $DstStreet = $ExcelWorkSheet.Range($ColumnC).Text
+  $DstPLZ = $ExcelWorkSheet.Range($ColumnD).Text
+  $DstCity = $ExcelWorkSheet.Range($ColumnE).Text
+
+  $percentComplete = ($i / $UsedRows) * 100
+  $CurrentItem = $DstName
+  Write-Progress -Status "Processing item $CurrentItem" -PercentComplete $percentComplete -Activity "Building Array with Data for Dienststellen"
+
+  $Dst = New-Object psobject -Property @{
+    Name = $DstName
+    ID = $DstID
+    Street = $DstStreet
+    PLZ = $DstPLZ
+    City = $DstCity
+  }
+  
+  if ($DstName -ne "") {
+    <# Only add to array if Variable contains data #>
+    $Dienststellen += $Dst
+  }
+  
+  Remove-Variable -Name ColumnA
+  Remove-Variable -Name ColumnB
+  Remove-Variable -Name ColumnC
+  Remove-Variable -Name ColumnD
+  Remove-Variable -Name ColumnE
+  Remove-Variable -Name Dst
+  Remove-Variable -Name DstName
+  Remove-Variable -Name DstID
+  Remove-Variable -Name DstStreet
+  Remove-Variable -Name DstPLZ
+  Remove-Variable -Name DstCity
+}
+
+Write-Progress -Status "Processing Done" -PercentComplete 100 -Activity "Building Array with Data for Dienststellen"
+#Cleanup
+Remove-Variable -Name i
+Stop-Process -Name EXCEL
+
+Write-Log -Message "end region Telefonliste"
+Write-Log -Message "::"
 #endregion
 
 #region query AD Users
@@ -136,23 +233,39 @@ $SearchString = $SearchStringFA + "*"
 $Counter = 0
 $FoundUsers = $ADUsers.Count
 foreach ($ADUser in $ADUsers) {
+  <#prepare loop variables#>
   $Counter++
   $percentComplete = ($Counter / $ADUsers.Count) * 100
   $CurrentItem = $ADUser.name
+  
   Write-Progress -Status "Processing item $CurrentItem" -PercentComplete $percentComplete -Activity "Filtering $FoundUsers Users found in previous step"
+  $FAIDUser = $CurrentItem.Substring(0,4)
   [array]$FAGroups = @()
   $FAGroups = Get-ADPrincipalGroupMembership -Identity $ADUser.samAccountName | Where-Object { $_.Name -like $SearchString }
   if ((($FaGroups.count) -ne "0")) {
     if ((($FAGroups.count) -gt "1")) {
+      <#User is assigned to more than one FA, put to mailing list#>
       $MailingUsers += $ADUser
     } else {
-      $FAUsers += $ADUser
+      $FAIDGroup = Get-FAIDGroup -Name $FAGroups.name
+      if ($FAIDGroup -eq "0000") {
+        <#group definition is empty. Put user to mailing list#>
+        Write-Log -Message ('::Error:: User {0}; group {1} description field is empty' -f $ADUser.name,$FAGroups.name)
+        $MailingUsers += $ADUser
+      } elseif ($FAIDGroup -eq "0001") {
+        <#group definition contains no numbers. Put user to mailing list#>
+        Write-Log -Message ('::Error:: User {0}; group {1} description field contains no FA ID' -f $ADUser.name,$FAGroups.name)
+        $MailingUsers += $ADUser
+      } else {
+        $FAUsers += $ADUser
+      }
     }
   }
   Remove-Variable -Name FAGroups
   Remove-Variable -Name ADUser
   Remove-Variable -Name CurrentItem
 }
+Write-Progress -Status "Processing Done" -PercentComplete 100 -Activity "Filtering $FoundUsers Users found in previous step"
 Write-Log -Message ('$FAUsers contains {0} Users for further processing' -f $FAUsers.Count)
 Write-Log -Message ('$MailingUsers contains {0} Users for further processing' -f $MailingUsers.Count)
 Write-Log -Message "::"
@@ -161,8 +274,11 @@ Write-Log -Message "end region query AD Users"
 Write-Log -Message "::"
 #endregion
 
+#Get-ADGroupDescription -Name "sicHFOmitarbFAHersfeld"
+
 #region Cleanup
 Remove-Variable -Name DataSource
+#Stop-Process -Name EXCEL
 
 #endregion
 Write-Log -Message '-------------------------------- End -------------------------------'
