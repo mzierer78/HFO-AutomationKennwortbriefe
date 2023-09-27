@@ -4,7 +4,7 @@
     <debug>false</debug>
     <LogFile Name="D:\NoBackup\HFO-AutomationKennwortbriefe\HFO-AutomationKennwortbriefe.log" />
     <SearchPathADUser Name="OU=Benutzer,OU=HFO,DC=itshessen,DC=hessen,DC=de" />
-    <GroupUser samAccountName="sicHFObenutzer" ObjectSid="" maxobjects="30" />
+    <GroupUser samAccountName="sicHFObenutzer" ObjectSid="" maxobjects="3" />
     <SearchStringFA Name="sicHFOmitarbfa" />
     <Telefonliste FileName="Telefonverzeichnis.xls" />
 </Configuration>

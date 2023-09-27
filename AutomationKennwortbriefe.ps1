@@ -140,7 +140,7 @@ Write-Log -Message "start region Telefonliste"
 
 $PhoneListPath = Join-Path -Path $here -ChildPath $Telefonliste
 
-#use locally installed excel to access data
+<#use locally installed excel to access data#>
 <#create a com object for the application#>
 $ExcelObj = New-Object -ComObject Excel.Application
 $ExcelObj.Visible = $false
@@ -198,7 +198,7 @@ for ($i = 2; $i -le $UsedRows; $i++) {
 }
 
 Write-Progress -Status "Processing Done" -PercentComplete 100 -Activity "Building Array with Data for Dienststellen"
-#Cleanup
+<#Cleanup#>
 Remove-Variable -Name i
 Stop-Process -Name EXCEL
 
@@ -272,6 +272,74 @@ Write-Log -Message "::"
 
 Write-Log -Message "end region query AD Users"
 Write-Log -Message "::"
+#endregion
+
+#region process users
+Write-Log -Message "start region process users"
+$collection = $FAUsers
+#$FA = @()
+foreach ($User in $collection) {
+  <# $User is the current item #>
+  $CurrentItem = $User.name
+  $FAID = $CurrentItem.Substring(0,4)
+  #$FAID = 1281 <#for debugging only#>
+  $FA = $Dienststellen | Where-Object { $_.ID -eq $FAID}
+  
+  <#check if duplicate FAID entries exist for User#>
+  if ($Fa.Count -ne $null) {
+    <# Action to perform if the condition is true, duplicate FAID exist #>
+    Write-Log -Message ('::Error:: FA Address cannot be determined for User {0}, Multiple entries for FA {1}' -f $User.name,$FAID)
+    $User += $MailingUsers
+  } else {
+    <# Action to perform if no duplicate FAID exist#>
+    <#Check for stored credentials to be used for writing to AD#>
+    $CredXMLFile = Join-Path $here -ChildPath credentials.xml
+    $XMLExist = Test-Path -Path $CredXMLFile
+
+    If (!($CredXMLFile)){
+      Write-Log -Message "No Credentials stored. Please run the script EPMMonitoringCreateCreds.ps1 to create the credentials"
+      break
+    }
+    
+    #import stored credentials
+    $Credential = Import-Clixml -Path $CredXMLFile
+
+    $securepwd = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Credential.Password)
+    $DecryptedPwd = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($securepwd)
+
+    if ($Debug) {
+      Write-Log -Message "Dumping read values to log..."
+      Write-Log -Message ('CredentialXML Filename:          {0}' -f $CredXMLFile)
+      Write-Log -Message ('Username:                        {0}' -f $Credential.UserName)
+      Write-Log -Message ('Encrypted Password:              {0}' -f $securepwd)
+    }
+
+    <#Use script block to write data back to AD#>
+    $Identity = $User.samAccountName
+    $StreetAddress = $FA.Street
+    $City = $FA.City
+    $PostalCode = $FA.PLZ
+
+    $ScriptBlock = {
+      param(
+        $Identity,
+        $StreetAddress,
+        $City,
+        $PostalCode
+      )
+      Set-ADUser -Identity $Identity -StreetAddress $StreetAddress -City $City -$PostalCode
+    }
+
+    Invoke-Command -Credential $Credential -ComputerName $env:COMPUTERNAME -ScriptBlock $ScriptBlock -ArgumentList $Identity,$StreetAddress,$City,$Postalcode
+    #Set-ADUser -Identity $User.SamAccountName -StreetAddress $FA.Street -City $FA.City -PostalCode $FA.PLZ
+  }
+  Remove-Variable -Name CurrentItem
+  Remove-Variable -Name FAID
+  Remove-Variable -Name FA
+}
+
+
+Write-Log -Message "end region process users"
 #endregion
 
 #Get-ADGroupDescription -Name "sicHFOmitarbFAHersfeld"
