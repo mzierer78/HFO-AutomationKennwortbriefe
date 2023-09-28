@@ -117,6 +117,10 @@ Write-Log -Message "start region read data from XML file"
 # prepare Variables
 [string]$CurrentUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 [string]$GroupUser = $DataSource.Configuration.GroupUser.samAccountName
+#[string]$MailReceiver = $DataSource.configuration.Mail.Receiver
+[string]$MailReceiver = @( $Configfile.configuration.Mail.Receiver.split(",") )
+[string]$MailSender = $DataSource.configuration.Mail.Sender
+[string]$MailServer = $DataSource.Configuration.Mail.Server
 [string]$MaxObjects = $DataSource.Configuration.GroupUser.MaxObjects
 [string]$SearchPathADUser = $DataSource.Configuration.SearchPathADUser.Name
 [string]$SearchStringFA = $DataSource.Configuration.SearchStringFA.Name
@@ -126,6 +130,9 @@ Write-Log -Message "start region read data from XML file"
 Write-Log -Message "Dumping read values to Log..."
 Write-Log -Message ('Current User Context:            {0}' -f $CurrentUser)
 Write-Log -Message ('GroupUser:                       {0}' -f $GroupUser)
+Write-Log -Message ('MailReceiver:                    {0}' -f $MailReceiver)
+Write-Log -Message ('MailSender:                      {0}' -f $MailSender)
+Write-Log -Message ('MailServer:                      {0}' -f $MailServer)
 Write-Log -Message ('MaxObjects:                      {0}' -f $MaxObjects)
 Write-Log -Message ('SearchPathADUser:                {0}' -f $SearchPathADUser)
 Write-Log -Message ('SearchStringFA:                  {0}' -f $SearchStringFA)
@@ -274,13 +281,47 @@ Write-Log -Message "end region query AD Users"
 Write-Log -Message "::"
 #endregion
 
+#region Mailversand
+Write-Log -Message "Start Region Mailversand"
+
+<#Mailversand vorbereiten#>
+Write-Log -Message "Mailversand vorbereiten"
+$utf8 = New-Object System.Text.UTF8Encoding
+$Betreff = "Adressabgleich fuer PKI PIN Briefe - Benutzer zum weiteren Analyse"
+$Mailbody = @"
+Hallo,
+
+Diese E-Mail wurde automatisch generiert und beinhaltet AD Benutzerkonten, welche beim letzten Adressabgleich mit der SAP HR Telefonliste nicht eindeutig zugeordnet werden konnten.
+Bitte validieren Sie diese Benutzerkonten.
+
+$MailingUsers
+
+Ihr Team von der IT-Infrastruktur
+"@
+
+
+Send-MailMessage -To $MailReceiver -From $MailSender -Subject $Betreff -Body $Mailbody -SmtpServer $MailServer -Encoding $utf8
+
+Remove-Variable -Name utf8
+Remove-Variable -Name Betreff
+Remove-Variable -Name Mailbody
+
+Write-Log -Message "End Region Mailversand"
+Write-Log -Message ""
+#endregion
+
 #region process users
 Write-Log -Message "start region process users"
 $collection = $FAUsers
+$Counter = 0
 #$FA = @()
 foreach ($User in $collection) {
-  <# $User is the current item #>
+  $Counter++
+  $Total = $collection.Count
+  $percentComplete = ($Counter / $Total) * 100
   $CurrentItem = $User.name
+  Write-Progress -Status "Processing AD object of $CurrentItem" -PercentComplete $percentComplete -Activity "Updating location information of $Total AD Objects"
+  <# $User is the current item #>
   $FAID = $CurrentItem.Substring(0,4)
   #$FAID = 1281 <#for debugging only#>
   $FA = $Dienststellen | Where-Object { $_.ID -eq $FAID}
@@ -292,36 +333,19 @@ foreach ($User in $collection) {
     $User += $MailingUsers
   } else {
     <# Action to perform if no duplicate FAID exist#>
-    $Identity = $User.samAccountName
-    $StreetAddress = $FA.Street
-    $City = $FA.City
-    $PostalCode = $FA.PostalCode
-
-    $ScriptBlock = {
-      param(
-        $Identity,
-        $StreetAddress,
-        $City,
-        $PostalCode
-      )
-      Set-ADUser -Identity $Identity -StreetAddress $StreetAddress -City $City -PostalCode $PostalCode
-    }
-
     Set-ADUser -Identity $User.SamAccountName -StreetAddress $FA.Street -City $FA.City -PostalCode $FA.PostalCode
-
-    #Invoke-Command -Credential $Credential -ComputerName $env:COMPUTERNAME -ScriptBlock $ScriptBlock -ArgumentList $Identity,$StreetAddress,$City,$Postalcode
-    #Invoke-Command -Credential $Credential -ScriptBlock $ScriptBlock -ArgumentList $Identity,$StreetAddress,$City,$Postalcode
-    #Set-ADUser -Identity $User.SamAccountName -StreetAddress $FA.Street -City $FA.City -PostalCode $FA.PLZ
-    #Start-Process -FilePath "powershell.exe" -Credential $Credential -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -Command Set-ADUser -Identity {0} -Streetaddress {1} -City {2} -PostalCode {3}' -f $Identity,$StreetAddress,$City,$PostalCode)
   }
   Remove-Variable -Name CurrentItem
   Remove-Variable -Name FAID
   Remove-Variable -Name FA
+  Remove-Variable -Name User
+  Remove-Variable -Name Counter
 }
-
+Write-Progress -Status "Processing AD objects done" -PercentComplete 100 -Activity "Updating location information of $Total AD Objects"
 
 Write-Log -Message "end region process users"
 #endregion
+
 
 #Get-ADGroupDescription -Name "sicHFOmitarbFAHersfeld"
 
