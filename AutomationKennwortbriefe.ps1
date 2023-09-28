@@ -164,7 +164,7 @@ for ($i = 2; $i -le $UsedRows; $i++) {
   $DstName = $ExcelWorkSheet.Range($ColumnA).Text
   $DstID = $ExcelWorkSheet.Range($ColumnB).Text
   $DstStreet = $ExcelWorkSheet.Range($ColumnC).Text
-  $DstPLZ = $ExcelWorkSheet.Range($ColumnD).Text
+  $DstPostalCode = $ExcelWorkSheet.Range($ColumnD).Text
   $DstCity = $ExcelWorkSheet.Range($ColumnE).Text
 
   $percentComplete = ($i / $UsedRows) * 100
@@ -175,7 +175,7 @@ for ($i = 2; $i -le $UsedRows; $i++) {
     Name = $DstName
     ID = $DstID
     Street = $DstStreet
-    PLZ = $DstPLZ
+    PostalCode = $DstPostalCode
     City = $DstCity
   }
   
@@ -193,7 +193,7 @@ for ($i = 2; $i -le $UsedRows; $i++) {
   Remove-Variable -Name DstName
   Remove-Variable -Name DstID
   Remove-Variable -Name DstStreet
-  Remove-Variable -Name DstPLZ
+  Remove-Variable -Name DstPostalCode
   Remove-Variable -Name DstCity
 }
 
@@ -292,33 +292,10 @@ foreach ($User in $collection) {
     $User += $MailingUsers
   } else {
     <# Action to perform if no duplicate FAID exist#>
-    <#Check for stored credentials to be used for writing to AD#>
-    $CredXMLFile = Join-Path $here -ChildPath credentials.xml
-    $XMLExist = Test-Path -Path $CredXMLFile
-
-    If (!($CredXMLFile)){
-      Write-Log -Message "No Credentials stored. Please run the script EPMMonitoringCreateCreds.ps1 to create the credentials"
-      break
-    }
-    
-    #import stored credentials
-    $Credential = Import-Clixml -Path $CredXMLFile
-
-    $securepwd = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Credential.Password)
-    $DecryptedPwd = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($securepwd)
-
-    if ($Debug) {
-      Write-Log -Message "Dumping read values to log..."
-      Write-Log -Message ('CredentialXML Filename:          {0}' -f $CredXMLFile)
-      Write-Log -Message ('Username:                        {0}' -f $Credential.UserName)
-      Write-Log -Message ('Encrypted Password:              {0}' -f $securepwd)
-    }
-
-    <#Use script block to write data back to AD#>
     $Identity = $User.samAccountName
     $StreetAddress = $FA.Street
     $City = $FA.City
-    $PostalCode = $FA.PLZ
+    $PostalCode = $FA.PostalCode
 
     $ScriptBlock = {
       param(
@@ -327,11 +304,15 @@ foreach ($User in $collection) {
         $City,
         $PostalCode
       )
-      Set-ADUser -Identity $Identity -StreetAddress $StreetAddress -City $City -$PostalCode
+      Set-ADUser -Identity $Identity -StreetAddress $StreetAddress -City $City -PostalCode $PostalCode
     }
 
-    Invoke-Command -Credential $Credential -ComputerName $env:COMPUTERNAME -ScriptBlock $ScriptBlock -ArgumentList $Identity,$StreetAddress,$City,$Postalcode
+    Set-ADUser -Identity $User.SamAccountName -StreetAddress $FA.Street -City $FA.City -PostalCode $FA.PostalCode
+
+    #Invoke-Command -Credential $Credential -ComputerName $env:COMPUTERNAME -ScriptBlock $ScriptBlock -ArgumentList $Identity,$StreetAddress,$City,$Postalcode
+    #Invoke-Command -Credential $Credential -ScriptBlock $ScriptBlock -ArgumentList $Identity,$StreetAddress,$City,$Postalcode
     #Set-ADUser -Identity $User.SamAccountName -StreetAddress $FA.Street -City $FA.City -PostalCode $FA.PLZ
+    #Start-Process -FilePath "powershell.exe" -Credential $Credential -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -Command Set-ADUser -Identity {0} -Streetaddress {1} -City {2} -PostalCode {3}' -f $Identity,$StreetAddress,$City,$PostalCode)
   }
   Remove-Variable -Name CurrentItem
   Remove-Variable -Name FAID
