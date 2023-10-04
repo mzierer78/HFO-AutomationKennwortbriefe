@@ -4,7 +4,7 @@
     <debug>false</debug>
     <GroupUser samAccountName="sicHFObenutzer" ObjectSid="" maxobjects="100" />
     <LogFile Name="D:\NoBackup\HFO-AutomationKennwortbriefe\HFO-AutomationKennwortbriefe.log" />
-    <Mail Server="smtp.hfo.itshessen.hessen.de" Sender="hfsystec@forst.hessen.de" Receiver="markus.zierer@forst.hessen.de,laurenz.duerbeck@forst.hessen.de" />
+    <Mail Server="smtp.hfo.itshessen.hessen.de" Sender="hfsystec@forst.hessen.de" Receiver="markus.zierer@forst.hessen.de,markus.zierer@me.com" />
     <SearchPathADUser Name="OU=Benutzer,OU=HFO,DC=itshessen,DC=hessen,DC=de" />
     <SearchStringFA Name="sicHFOmitarbfa" />
     <Telefonliste FileName="Telefonverzeichnis.xls" />

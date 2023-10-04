@@ -94,6 +94,77 @@ function  Write-Log {
     #Write-Log -Message "end function Get-ADGroupDescription"
     Return $FAID
   }
+
+  function Import-Dienststellen {
+    param (
+      $PhoneList
+    )
+    Write-Log -Message "start function Import-Dienststellen"
+
+    <#use locally installed excel to access data#>
+    <#create a com object for the application#>
+    $ExcelObj = New-Object -ComObject Excel.Application
+    $ExcelObj.Visible = $false
+
+    <#open data source#>
+    $ExcelWorkBook = $ExcelObj.Workbooks.open($PhoneList)
+
+    <#select sheet containing FA Address list#>
+    $ExcelWorkSheet = $ExcelWorkBook.Sheets.Item("Adressen der Dienststellen")
+    $UsedRange = $ExcelWorkSheet.UsedRange
+    $UsedRows = $usedRange.Rows.Count
+
+    $Dienststellen = @()
+    for ($i = 2; $i -le $UsedRows; $i++) {
+      <# Action that will repeat until the condition is met #>
+      $ColumnA = "A" + $i
+      $ColumnB = "B" + $i
+      $ColumnC = "C" + $i
+      $ColumnD = "D" + $i
+      $ColumnE = "E" + $i
+      $DstName = $ExcelWorkSheet.Range($ColumnA).Text
+      $DstID = $ExcelWorkSheet.Range($ColumnB).Text
+      $DstStreet = $ExcelWorkSheet.Range($ColumnC).Text
+      $DstPostalCode = $ExcelWorkSheet.Range($ColumnD).Text
+      $DstCity = $ExcelWorkSheet.Range($ColumnE).Text
+
+      $percentComplete = ($i / $UsedRows) * 100
+      $CurrentItem = $DstName
+      Write-Progress -Status "Processing item $CurrentItem" -PercentComplete $percentComplete -Activity "Building Array with Data for Dienststellen"
+
+      $Dst = New-Object psobject -Property @{
+        Name = $DstName
+        ID = $DstID
+        Street = $DstStreet
+        PostalCode = $DstPostalCode
+        City = $DstCity
+      }
+      
+      if ($DstName -ne "") {
+        <# Only add to array if Variable contains data #>
+        $Dienststellen += $Dst
+      }
+      
+      Remove-Variable -Name ColumnA
+      Remove-Variable -Name ColumnB
+      Remove-Variable -Name ColumnC
+      Remove-Variable -Name ColumnD
+      Remove-Variable -Name ColumnE
+      Remove-Variable -Name Dst
+      Remove-Variable -Name DstName
+      Remove-Variable -Name DstID
+      Remove-Variable -Name DstStreet
+      Remove-Variable -Name DstPostalCode
+      Remove-Variable -Name DstCity
+    }
+    <#Cleanup#>
+    Remove-Variable -Name i
+    Stop-Process -Name EXCEL
+
+    Write-Progress -Status "Processing Done" -PercentComplete 100 -Activity "Building Array with Data for Dienststellen"
+    Write-Log -Message "end function Import-Dienststellen"
+    Return $Dienststellen
+  }
 #endregion
 
 #region write basic infos to log
@@ -118,7 +189,7 @@ Write-Log -Message "start region read data from XML file"
 [string]$CurrentUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 [string]$GroupUser = $DataSource.Configuration.GroupUser.samAccountName
 #[string]$MailReceiver = $DataSource.configuration.Mail.Receiver
-[string]$MailReceiver = @( $Configfile.configuration.Mail.Receiver.split(",") )
+[string]$MailReceiver = $Configfile.configuration.Mail.Receiver
 [string]$MailSender = $DataSource.configuration.Mail.Sender
 [string]$MailServer = $DataSource.Configuration.Mail.Server
 [string]$MaxObjects = $DataSource.Configuration.GroupUser.MaxObjects
@@ -146,70 +217,30 @@ Write-Log -Message "::"
 Write-Log -Message "start region Telefonliste"
 
 $PhoneListPath = Join-Path -Path $here -ChildPath $Telefonliste
+$DSTTemp = Import-Dienststellen -PhoneList $PhoneListPath
 
-<#use locally installed excel to access data#>
-<#create a com object for the application#>
-$ExcelObj = New-Object -ComObject Excel.Application
-$ExcelObj.Visible = $false
-
-<#open data source#>
-$ExcelWorkBook = $ExcelObj.Workbooks.open($PhoneListPath)
-
-<#select sheet containing FA Address list#>
-$ExcelWorkSheet = $ExcelWorkBook.Sheets.Item("Adressen der Dienststellen")
-$UsedRange = $ExcelWorkSheet.UsedRange
-$UsedRows = $usedRange.Rows.Count
-
+Remove-Variable -Name Dienststellen
 $Dienststellen = @()
-for ($i = 2; $i -le $UsedRows; $i++) {
-  <# Action that will repeat until the condition is met #>
-  $ColumnA = "A" + $i
-  $ColumnB = "B" + $i
-  $ColumnC = "C" + $i
-  $ColumnD = "D" + $i
-  $ColumnE = "E" + $i
-  $DstName = $ExcelWorkSheet.Range($ColumnA).Text
-  $DstID = $ExcelWorkSheet.Range($ColumnB).Text
-  $DstStreet = $ExcelWorkSheet.Range($ColumnC).Text
-  $DstPostalCode = $ExcelWorkSheet.Range($ColumnD).Text
-  $DstCity = $ExcelWorkSheet.Range($ColumnE).Text
 
-  $percentComplete = ($i / $UsedRows) * 100
-  $CurrentItem = $DstName
-  Write-Progress -Status "Processing item $CurrentItem" -PercentComplete $percentComplete -Activity "Building Array with Data for Dienststellen"
-
-  $Dst = New-Object psobject -Property @{
-    Name = $DstName
-    ID = $DstID
-    Street = $DstStreet
-    PostalCode = $DstPostalCode
-    City = $DstCity
+$collection = $DSTTemp
+foreach ($currentItemName in $collection) {
+  <# $currentItemName is the current item #>
+  if ($currentItemName.ID -eq "0960") {
+    <# Action to perform if the condition is true #>
+    $City = $currentItemName.City
+    if ($City -eq "Kassel") {
+      <# Action to perform if the condition is true #>
+      $Dienststellen += $currentItemName
+    }
+  } else {
+    <# Action when all if and elseif conditions are false #>
+    $Dienststellen += $currentItemName
   }
-  
-  if ($DstName -ne "") {
-    <# Only add to array if Variable contains data #>
-    $Dienststellen += $Dst
-  }
-  
-  Remove-Variable -Name ColumnA
-  Remove-Variable -Name ColumnB
-  Remove-Variable -Name ColumnC
-  Remove-Variable -Name ColumnD
-  Remove-Variable -Name ColumnE
-  Remove-Variable -Name Dst
-  Remove-Variable -Name DstName
-  Remove-Variable -Name DstID
-  Remove-Variable -Name DstStreet
-  Remove-Variable -Name DstPostalCode
-  Remove-Variable -Name DstCity
 }
 
-Write-Progress -Status "Processing Done" -PercentComplete 100 -Activity "Building Array with Data for Dienststellen"
-<#Cleanup#>
-Remove-Variable -Name i
-Stop-Process -Name EXCEL
 
 Write-Log -Message "end region Telefonliste"
+Remove-Variable -Name Dienststellen
 Write-Log -Message "::"
 #endregion
 
@@ -230,6 +261,13 @@ Write-Log -Message ('Build Array $ADUsers by resolving group members of {0}' -f 
 [array]$ADUsers = @()
 #$ADUsers = Get-ADUser -Filter * -SearchBase $SearchPathADUser
 $ADUsers = Get-ADGroupMember -Identity $GroupUser | Select-Object -First $MaxObjects
+if ($Debug) {
+  <# Action to perform if the condition is true #>
+  <#CSV Datei erstellen#>
+  $path = Join-Path -Path $here -ChildPath "ADUsers.csv"
+  Write-Log -Message "Dumping Found ADUsers to file $path"
+  $ADUsers | Export-Csv -Path $path -NoTypeInformation
+}
 Write-Log -Message ('finished resolving users. Array contains {0} users' -f $ADUsers.Count)
 Write-Log -Message "::"
 
@@ -252,6 +290,7 @@ foreach ($ADUser in $ADUsers) {
   if ((($FaGroups.count) -ne "0")) {
     if ((($FAGroups.count) -gt "1")) {
       <#User is assigned to more than one FA, put to mailing list#>
+      Write-Log -Message ('::Error:: User {0} is assigned to more than one FA' -f $ADUser.name)
       $MailingUsers += $ADUser
     } else {
       $FAIDGroup = Get-FAIDGroup -Name $FAGroups.name
@@ -281,35 +320,6 @@ Write-Log -Message "end region query AD Users"
 Write-Log -Message "::"
 #endregion
 
-#region Mailversand
-Write-Log -Message "Start Region Mailversand"
-
-<#Mailversand vorbereiten#>
-Write-Log -Message "Mailversand vorbereiten"
-$utf8 = New-Object System.Text.UTF8Encoding
-$Betreff = "Adressabgleich fuer PKI PIN Briefe - Benutzer zum weiteren Analyse"
-$Mailbody = @"
-Hallo,
-
-Diese E-Mail wurde automatisch generiert und beinhaltet AD Benutzerkonten, welche beim letzten Adressabgleich mit der SAP HR Telefonliste nicht eindeutig zugeordnet werden konnten.
-Bitte validieren Sie diese Benutzerkonten.
-
-$MailingUsers
-
-Ihr Team von der IT-Infrastruktur
-"@
-
-
-Send-MailMessage -To $MailReceiver -From $MailSender -Subject $Betreff -Body $Mailbody -SmtpServer $MailServer -Encoding $utf8
-
-Remove-Variable -Name utf8
-Remove-Variable -Name Betreff
-Remove-Variable -Name Mailbody
-
-Write-Log -Message "End Region Mailversand"
-Write-Log -Message ""
-#endregion
-
 #region process users
 Write-Log -Message "start region process users"
 $collection = $FAUsers
@@ -330,7 +340,7 @@ foreach ($User in $collection) {
   if ($Fa.Count -ne $null) {
     <# Action to perform if the condition is true, duplicate FAID exist #>
     Write-Log -Message ('::Error:: FA Address cannot be determined for User {0}, Multiple entries for FA {1}' -f $User.name,$FAID)
-    $User += $MailingUsers
+    $MailingUsers += $User
   } else {
     <# Action to perform if no duplicate FAID exist#>
     Set-ADUser -Identity $User.SamAccountName -StreetAddress $FA.Street -City $FA.City -PostalCode $FA.PostalCode
@@ -340,17 +350,52 @@ foreach ($User in $collection) {
   Remove-Variable -Name FA
   Remove-Variable -Name User
   Remove-Variable -Name Counter
+  #Remove-Variable -Name collection
 }
 Write-Progress -Status "Processing AD objects done" -PercentComplete 100 -Activity "Updating location information of $Total AD Objects"
 
 Write-Log -Message "end region process users"
 #endregion
 
+#region Mailversand
+Write-Log -Message "Start Region Mailversand"
 
-#Get-ADGroupDescription -Name "sicHFOmitarbFAHersfeld"
+<#CSV Datei erstellen#>
+$path = Join-Path -Path $here -ChildPath "UsersToCheck.csv"
+$MailingUsers | Export-Csv -Path $path -NoTypeInformation
+
+<#Mailversand vorbereiten#>
+Write-Log -Message "Mailversand vorbereiten"
+$utf8 = New-Object System.Text.UTF8Encoding
+$Receiver = @( $MailReceiver.split(",") )
+$Betreff = "Adressabgleich fuer PKI PIN Briefe - Benutzer zum weiteren Analyse"
+$UserCount = $MailingUsers.Count
+$Mailbody = @"
+Hallo,
+
+Diese E-Mail wurde automatisch generiert und beinhaltet AD Benutzerkonten, welche beim letzten Adressabgleich mit der SAP HR Telefonliste nicht eindeutig zugeordnet werden konnten.
+Bitte validieren Sie diese Benutzerkonten.
+
+Es wurden $UserCount Benutzer gefunden, bei denen eine Klaerung notwendig ist. 
+
+Ihr Team von der IT-Infrastruktur
+"@
+
+Send-MailMessage -To $Receiver -From $MailSender -Subject $Betreff -Body $Mailbody -SmtpServer $MailServer -Encoding $utf8 -Attachments $path
+
+Remove-Variable -Name utf8
+Remove-Variable -Name Betreff
+Remove-Variable -Name Mailbody
+Remove-Variable -Name path
+
+Write-Log -Message "End Region Mailversand"
+Write-Log -Message ""
+#endregion
 
 #region Cleanup
 Remove-Variable -Name DataSource
+Remove-variable -Name Dienststellen
+Remove-Variable -Name FAUsers
 #Stop-Process -Name EXCEL
 
 #endregion
