@@ -2,9 +2,9 @@
 <!-- Attention, Activate a function should be checked First with Debug Options -->
 <Configuration>
     <debug>false</debug>
-    <GroupUser samAccountName="sicHFObenutzer" ObjectSid="" maxobjects="100" />
+    <GroupUser samAccountName="sicHFObenutzer" ObjectSid="" maxobjects="300" />
     <LogFile Name="D:\NoBackup\HFO-AutomationKennwortbriefe\HFO-AutomationKennwortbriefe.log" />
-    <Mail Server="smtp.hfo.itshessen.hessen.de" Sender="hfsystec@forst.hessen.de" Receiver="markus.zierer@forst.hessen.de,markus.zierer@me.com" />
+    <Mail Server="smtp.hfo.itshessen.hessen.de" Sender="hfsystec@forst.hessen.de" Receiver="markus.zierer@forst.hessen.de" />
     <SearchPathADUser Name="OU=Benutzer,OU=HFO,DC=itshessen,DC=hessen,DC=de" />
     <SearchStringFA Name="sicHFOmitarbfa" />
     <Telefonliste FileName="Telefonverzeichnis.xls" />

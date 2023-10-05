@@ -216,19 +216,34 @@ Write-Log -Message "end region read data from XML file"
 Write-Log -Message "::"
 Write-Log -Message "start region Telefonliste"
 
+Write-Log -Message "Dienststellen aus Telefonliste einlesen"
 $PhoneListPath = Join-Path -Path $here -ChildPath $Telefonliste
 $DSTTemp = Import-Dienststellen -PhoneList $PhoneListPath
+Write-Log -Message ('Es wurden {0} Dienststellen Eintraege gefunden' -f $DSTTemp.count)
 
-Remove-Variable -Name Dienststellen
+Write-Log -Message "Ausfiltern von Dienststellen mit mehreren Standorten"
 $Dienststellen = @()
-
 $collection = $DSTTemp
 foreach ($currentItemName in $collection) {
   <# $currentItemName is the current item #>
   if ($currentItemName.ID -eq "0960") {
     <# Action to perform if the condition is true #>
-    $City = $currentItemName.City
-    if ($City -eq "Kassel") {
+    $City = $currentItemName.PostalCode
+    if ($City -eq "34131") {
+      <# Action to perform if the condition is true #>
+      $Dienststellen += $currentItemName
+    }
+  } elseif ($currentItemName.ID -eq "1281") {
+    <# Action when this condition is true #>
+    $City = $currentItemName.PostalCode
+    if ($City -eq "35799") {
+      <# Action to perform if the condition is true #>
+      $Dienststellen += $currentItemName
+    }
+  } elseif ($currentItemName.ID -eq "0951") {
+    <# Action when this condition is true #>
+    $City = $currentItemName.PostalCode
+    if ($City -eq "37079") {
       <# Action to perform if the condition is true #>
       $Dienststellen += $currentItemName
     }
@@ -237,11 +252,11 @@ foreach ($currentItemName in $collection) {
     $Dienststellen += $currentItemName
   }
 }
-
-
+Write-Log -Message ('Filtern abgeschlossen, es verbleiben {0} Dienststellen' -f $Dienststellen.count)
+Remove-Variable -Name collection
+Remove-Variable -Name currentItemName
+Remove-Variable -Name DSTTemp
 Write-Log -Message "end region Telefonliste"
-Remove-Variable -Name Dienststellen
-Write-Log -Message "::"
 #endregion
 
 #region query AD Users
@@ -261,6 +276,7 @@ Write-Log -Message ('Build Array $ADUsers by resolving group members of {0}' -f 
 [array]$ADUsers = @()
 #$ADUsers = Get-ADUser -Filter * -SearchBase $SearchPathADUser
 $ADUsers = Get-ADGroupMember -Identity $GroupUser | Select-Object -First $MaxObjects
+Write-Log -Message ('finished resolving users. Array contains {0} users' -f $ADUsers.Count)
 if ($Debug) {
   <# Action to perform if the condition is true #>
   <#CSV Datei erstellen#>
@@ -268,8 +284,6 @@ if ($Debug) {
   Write-Log -Message "Dumping Found ADUsers to file $path"
   $ADUsers | Export-Csv -Path $path -NoTypeInformation
 }
-Write-Log -Message ('finished resolving users. Array contains {0} users' -f $ADUsers.Count)
-Write-Log -Message "::"
 
 Write-Log -Message ('Build Array $FAUsers by checking for group membership in {0}' -f $SearchStringFA)
 [array]$FAUsers = @()
@@ -311,20 +325,20 @@ foreach ($ADUser in $ADUsers) {
   Remove-Variable -Name ADUser
   Remove-Variable -Name CurrentItem
 }
-Write-Progress -Status "Processing Done" -PercentComplete 100 -Activity "Filtering $FoundUsers Users found in previous step"
+Write-Progress -Status "Processing Done" -PercentComplete 100 -Activity "Filtered $FoundUsers Users found in previous step"
 Write-Log -Message ('$FAUsers contains {0} Users for further processing' -f $FAUsers.Count)
 Write-Log -Message ('$MailingUsers contains {0} Users for further processing' -f $MailingUsers.Count)
-Write-Log -Message "::"
 
 Write-Log -Message "end region query AD Users"
-Write-Log -Message "::"
 #endregion
 
 #region process users
+Write-Log -Message "::"
 Write-Log -Message "start region process users"
 $collection = $FAUsers
 $Counter = 0
-#$FA = @()
+$ProcessedUsers = @()
+Write-Log -Message "Updating User AD Objects"
 foreach ($User in $collection) {
   $Counter++
   $Total = $collection.Count
@@ -344,25 +358,37 @@ foreach ($User in $collection) {
   } else {
     <# Action to perform if no duplicate FAID exist#>
     Set-ADUser -Identity $User.SamAccountName -StreetAddress $FA.Street -City $FA.City -PostalCode $FA.PostalCode
+    $ProcessedUsers += $User
   }
   Remove-Variable -Name CurrentItem
   Remove-Variable -Name FAID
   Remove-Variable -Name FA
   Remove-Variable -Name User
   Remove-Variable -Name Counter
-  #Remove-Variable -Name collection
 }
-Write-Progress -Status "Processing AD objects done" -PercentComplete 100 -Activity "Updating location information of $Total AD Objects"
+Write-Progress -Status "Processing AD objects done" -PercentComplete 100 -Activity "Updated location information of $Total AD Objects"
+if ($Debug) {
+  <# Action to perform if the condition is true #>
+  <#CSV Datei erstellen#>
+  $path = Join-Path -Path $here -ChildPath "ProcessedUsers.csv"
+  Write-Log -Message "Dumping processed Users to file $path"
+  $ProcessedUsers | Export-Csv -Path $path -NoTypeInformation
+}
+Write-Log -Message ('$MailingUsers contains {0} Users for further processing' -f $MailingUsers.Count)
+
+Remove-Variable -Name collection
 
 Write-Log -Message "end region process users"
 #endregion
 
 #region Mailversand
+Write-Log -Message "::"
 Write-Log -Message "Start Region Mailversand"
 
-<#CSV Datei erstellen#>
+Write-Log -Message "CSV Datei erstellen"
 $path = Join-Path -Path $here -ChildPath "UsersToCheck.csv"
 $MailingUsers | Export-Csv -Path $path -NoTypeInformation
+Write-Log -Message ('CSV Datei {0} erstellt' -f $path)
 
 <#Mailversand vorbereiten#>
 Write-Log -Message "Mailversand vorbereiten"
@@ -382,6 +408,7 @@ Ihr Team von der IT-Infrastruktur
 "@
 
 Send-MailMessage -To $Receiver -From $MailSender -Subject $Betreff -Body $Mailbody -SmtpServer $MailServer -Encoding $utf8 -Attachments $path
+Write-Log -Message ('Mail versendet an {0}' -f $Receiver)
 
 Remove-Variable -Name utf8
 Remove-Variable -Name Betreff
