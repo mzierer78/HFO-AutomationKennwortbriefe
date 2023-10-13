@@ -32,7 +32,8 @@ $XMLPath = Join-Path $here -ChildPath $XMLName
 [xml]$ConfigFile = Get-Content -Path $XMLPath
 #
 # we write one logfile and append each script execution
-[string]$global:Logfile = $ConfigFile.Configuration.Logfile.Name
+#[string]$global:Logfile = $ConfigFile.Configuration.Logfile.Name
+[string]$global:Logfile = Join-Path -Path $ConfigFile.Configuration.Logfile.Path -ChildPath $ConfigFile.Configuration.LogFile.Name
 If ($Logfile -eq "Default"){
     $global:Logfile = Join-Path $here -ChildPath "ScriptTemplate.log"
 }
@@ -70,101 +71,122 @@ function  Write-Log {
     {
       $msgToWrite | out-file -FilePath $global:Logfile -Append -Encoding utf8
     }
-  }
+}
 
-  function Get-FAIDGroup {
-    #[CmdletBinding()]
-    param (
-      $Name
-    )
-    #Write-Log -Message "start function Get-ADGroupDescription"
-    $group = Get-ADGroup -Filter {Name -eq $Name} -Properties DESCRIPTION
-    $string = $group.description
-    if ($string -eq $null) {
-      #description field is empty, setting value to 0000
-      $FAID = "0000"
-    } else {
-      $FAID = ($group.description).Substring(0,4)
-    }
-    if ($FAID -notmatch '^\d+$') {
-      #description field contains no FA ID, setting value to 0001
-      $FAID = "0001"
+function Dump-Csv {
+  param (
+    $Data,
+    $FileName
+  )
+  Write-Log -Message "start function Dump-Csv"
+  <#Build path#>
+  [string]$CsvFileRAW = Join-Path -Path $ConfigFile.Configuration.Logfile.Path -ChildPath $FileName
+  $Tmp = $CsvFileRAW.Split(".")
+  $CsvFile = $Tmp[0] + (Get-Date -Format yyyyMMdd) + "." + $Tmp[1]
+  Write-Log -Message "Dumping Found CSV to file $CsvFile"
+  <#Create file#>
+  $Data | Export-Csv -Path $CsvFile -NoTypeInformation  
+  
+  <#Cleanup#>
+  Remove-Variable -Name CsvFileRAW
+  Remove-Variable -Name Data
+  Remove-Variable -Name FileName
+  Remove-Variable -Name Tmp
+  Write-Log -Message "end function Dump-Csv"
+}
+
+function Get-FAIDGroup {
+  #[CmdletBinding()]
+  param (
+    $Name
+  )
+  #Write-Log -Message "start function Get-ADGroupDescription"
+  $group = Get-ADGroup -Filter {Name -eq $Name} -Properties DESCRIPTION
+  $string = $group.description
+  if ($string -eq $null) {
+    #description field is empty, setting value to 0000
+    $FAID = "0000"
+  } else {
+    $FAID = ($group.description).Substring(0,4)
+  }
+  if ($FAID -notmatch '^\d+$') {
+    #description field contains no FA ID, setting value to 0001
+    $FAID = "0001"
+  }
+  
+  #Write-Log -Message "end function Get-ADGroupDescription"
+  Return $FAID
+}
+
+function Import-Dienststellen {
+  param (
+    $PhoneList
+  )
+  Write-Log -Message "start function Import-Dienststellen"
+  <#use locally installed excel to access data#>
+  <#create a com object for the application#>
+  $ExcelObj = New-Object -ComObject Excel.Application
+  $ExcelObj.Visible = $false
+
+  <#open data source#>
+  $ExcelWorkBook = $ExcelObj.Workbooks.open($PhoneList)
+
+  <#select sheet containing FA Address list#>
+  $ExcelWorkSheet = $ExcelWorkBook.Sheets.Item("Adressen der Dienststellen")
+  $UsedRange = $ExcelWorkSheet.UsedRange
+  $UsedRows = $usedRange.Rows.Count
+
+  $Dienststellen = @()
+  for ($i = 2; $i -le $UsedRows; $i++) {
+    <# Action that will repeat until the condition is met #>
+    $ColumnA = "A" + $i
+    $ColumnB = "B" + $i
+    $ColumnC = "C" + $i
+    $ColumnD = "D" + $i
+    $ColumnE = "E" + $i
+    $DstName = $ExcelWorkSheet.Range($ColumnA).Text
+    $DstID = $ExcelWorkSheet.Range($ColumnB).Text
+    $DstStreet = $ExcelWorkSheet.Range($ColumnC).Text
+    $DstPostalCode = $ExcelWorkSheet.Range($ColumnD).Text
+    $DstCity = $ExcelWorkSheet.Range($ColumnE).Text
+
+    $percentComplete = ($i / $UsedRows) * 100
+    $CurrentItem = $DstName
+    Write-Progress -Status "Processing item $CurrentItem" -PercentComplete $percentComplete -Activity "Building Array with Data for Dienststellen"
+
+    $Dst = New-Object psobject -Property @{
+      Name = $DstName
+      ID = $DstID
+      Street = $DstStreet
+      PostalCode = $DstPostalCode
+      City = $DstCity
     }
     
-    #Write-Log -Message "end function Get-ADGroupDescription"
-    Return $FAID
-  }
-
-  function Import-Dienststellen {
-    param (
-      $PhoneList
-    )
-    Write-Log -Message "start function Import-Dienststellen"
-
-    <#use locally installed excel to access data#>
-    <#create a com object for the application#>
-    $ExcelObj = New-Object -ComObject Excel.Application
-    $ExcelObj.Visible = $false
-
-    <#open data source#>
-    $ExcelWorkBook = $ExcelObj.Workbooks.open($PhoneList)
-
-    <#select sheet containing FA Address list#>
-    $ExcelWorkSheet = $ExcelWorkBook.Sheets.Item("Adressen der Dienststellen")
-    $UsedRange = $ExcelWorkSheet.UsedRange
-    $UsedRows = $usedRange.Rows.Count
-
-    $Dienststellen = @()
-    for ($i = 2; $i -le $UsedRows; $i++) {
-      <# Action that will repeat until the condition is met #>
-      $ColumnA = "A" + $i
-      $ColumnB = "B" + $i
-      $ColumnC = "C" + $i
-      $ColumnD = "D" + $i
-      $ColumnE = "E" + $i
-      $DstName = $ExcelWorkSheet.Range($ColumnA).Text
-      $DstID = $ExcelWorkSheet.Range($ColumnB).Text
-      $DstStreet = $ExcelWorkSheet.Range($ColumnC).Text
-      $DstPostalCode = $ExcelWorkSheet.Range($ColumnD).Text
-      $DstCity = $ExcelWorkSheet.Range($ColumnE).Text
-
-      $percentComplete = ($i / $UsedRows) * 100
-      $CurrentItem = $DstName
-      Write-Progress -Status "Processing item $CurrentItem" -PercentComplete $percentComplete -Activity "Building Array with Data for Dienststellen"
-
-      $Dst = New-Object psobject -Property @{
-        Name = $DstName
-        ID = $DstID
-        Street = $DstStreet
-        PostalCode = $DstPostalCode
-        City = $DstCity
-      }
-      
-      if ($DstName -ne "") {
-        <# Only add to array if Variable contains data #>
-        $Dienststellen += $Dst
-      }
-      
-      Remove-Variable -Name ColumnA
-      Remove-Variable -Name ColumnB
-      Remove-Variable -Name ColumnC
-      Remove-Variable -Name ColumnD
-      Remove-Variable -Name ColumnE
-      Remove-Variable -Name Dst
-      Remove-Variable -Name DstName
-      Remove-Variable -Name DstID
-      Remove-Variable -Name DstStreet
-      Remove-Variable -Name DstPostalCode
-      Remove-Variable -Name DstCity
+    if ($DstName -ne "") {
+      <# Only add to array if Variable contains data #>
+      $Dienststellen += $Dst
     }
-    <#Cleanup#>
-    Remove-Variable -Name i
-    Stop-Process -Name EXCEL
-
-    Write-Progress -Status "Processing Done" -PercentComplete 100 -Activity "Building Array with Data for Dienststellen"
-    Write-Log -Message "end function Import-Dienststellen"
-    Return $Dienststellen
+    
+    Remove-Variable -Name ColumnA
+    Remove-Variable -Name ColumnB
+    Remove-Variable -Name ColumnC
+    Remove-Variable -Name ColumnD
+    Remove-Variable -Name ColumnE
+    Remove-Variable -Name Dst
+    Remove-Variable -Name DstName
+    Remove-Variable -Name DstID
+    Remove-Variable -Name DstStreet
+    Remove-Variable -Name DstPostalCode
+    Remove-Variable -Name DstCity
   }
+  <#Cleanup#>
+  Remove-Variable -Name i
+  Stop-Process -Name EXCEL
+
+  Write-Progress -Status "Processing Done" -PercentComplete 100 -Activity "Building Array with Data for Dienststellen"
+  Write-Log -Message "end function Import-Dienststellen"
+  Return $Dienststellen
+}
 #endregion
 
 #region write basic infos to log
@@ -182,13 +204,13 @@ Write-Log -Message "LogFilePath is:                  $LogFile"
 #endregion
 
 #region read data from XML file
+Write-Log -Message "::"
 Write-Log -Message "start region read data from XML file"
 [xml]$DataSource = Get-Content -Path $XMLPath
 
 # prepare Variables
 [string]$CurrentUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 [string]$GroupUser = $DataSource.Configuration.GroupUser.samAccountName
-#[string]$MailReceiver = $DataSource.configuration.Mail.Receiver
 [string]$MailReceiver = $Configfile.configuration.Mail.Receiver
 [string]$MailSender = $DataSource.configuration.Mail.Sender
 [string]$MailServer = $DataSource.Configuration.Mail.Server
@@ -208,7 +230,6 @@ Write-Log -Message ('MaxObjects:                      {0}' -f $MaxObjects)
 Write-Log -Message ('SearchPathADUser:                {0}' -f $SearchPathADUser)
 Write-Log -Message ('SearchStringFA:                  {0}' -f $SearchStringFA)
 Write-Log -Message ('Telefonliste:                    {0}' -f $Telefonliste)
-#foreach ($Service in $DataSource.Configuration.Service){Write-Log -Message ('Service Name:                    {0}' -f $Service.Name)}
 Write-Log -Message "end region read data from XML file"
 #endregion
 
@@ -253,6 +274,10 @@ foreach ($currentItemName in $collection) {
   }
 }
 Write-Log -Message ('Filtern abgeschlossen, es verbleiben {0} Dienststellen' -f $Dienststellen.count)
+if ($Debug) {
+  <# Action to perform if the condition is true #>
+  Dump-Csv -Data $Dienststellen -FileName "Dienststellen.csv"
+}
 Remove-Variable -Name collection
 Remove-Variable -Name currentItemName
 Remove-Variable -Name DSTTemp
@@ -279,10 +304,7 @@ $ADUsers = Get-ADGroupMember -Identity $GroupUser | Select-Object -First $MaxObj
 Write-Log -Message ('finished resolving users. Array contains {0} users' -f $ADUsers.Count)
 if ($Debug) {
   <# Action to perform if the condition is true #>
-  <#CSV Datei erstellen#>
-  $path = Join-Path -Path $here -ChildPath "ADUsers.csv"
-  Write-Log -Message "Dumping Found ADUsers to file $path"
-  $ADUsers | Export-Csv -Path $path -NoTypeInformation
+  Dump-Csv -Data $ADUsers -FileName "ADUsers.csv"
 }
 
 Write-Log -Message ('Build Array $FAUsers by checking for group membership in {0}' -f $SearchStringFA)
@@ -369,10 +391,7 @@ foreach ($User in $collection) {
 Write-Progress -Status "Processing AD objects done" -PercentComplete 100 -Activity "Updated location information of $Total AD Objects"
 if ($Debug) {
   <# Action to perform if the condition is true #>
-  <#CSV Datei erstellen#>
-  $path = Join-Path -Path $here -ChildPath "ProcessedUsers.csv"
-  Write-Log -Message "Dumping processed Users to file $path"
-  $ProcessedUsers | Export-Csv -Path $path -NoTypeInformation
+  Dump-Csv -Data $ProcessedUsers -FileName "ProcessedUsers.csv"
 }
 Write-Log -Message ('$MailingUsers contains {0} Users for further processing' -f $MailingUsers.Count)
 
@@ -409,7 +428,13 @@ Ihr Team von der IT-Infrastruktur
 
 Send-MailMessage -To $Receiver -From $MailSender -Subject $Betreff -Body $Mailbody -SmtpServer $MailServer -Encoding $utf8 -Attachments $path
 Write-Log -Message ('Mail versendet an {0}' -f $Receiver)
+if ($Debug) {
+  <# Action to perform if the condition is true #>
+  Dump-Csv -Data $MailingUsers -FileName "Mailingusers.csv"
+}
 
+<#Cleanup#>
+Remove-Item -Path $path
 Remove-Variable -Name utf8
 Remove-Variable -Name Betreff
 Remove-Variable -Name Mailbody
