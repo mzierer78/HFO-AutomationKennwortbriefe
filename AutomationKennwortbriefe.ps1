@@ -21,7 +21,8 @@
 
 param(
     [string]$XMLName = "config.xml",
-    [switch]$Debug
+    [switch]$Debug,
+    [switch]$WhatIf
 )
 
 #region loading modules, scripts & files
@@ -45,7 +46,10 @@ $global:Logfile = $lfTmp[0] + (Get-Date -Format yyyyMMdd) + "." + $lfTmp[1]
 # when debug mode is active, debug messages will be dispalyed in console windows
 #
 If ($ConfigFile.Configuration.debug -eq "true"){
-    $Debug = $true
+  $Debug = $true
+}
+If ($ConfigFile.Configuration.WhatIf -eq "true"){
+  $WhatIf = $true
 }
 #
 If ($Debug){
@@ -181,7 +185,7 @@ function Import-Dienststellen {
   }
   <#Cleanup#>
   Remove-Variable -Name i
-  Stop-Process -Name EXCEL
+  Stop-Process -Name EXCEL -Force
 
   Write-Progress -Status "Processing Done" -PercentComplete 100 -Activity "Building Array with Data for Dienststellen"
   Write-Log -Message "end function Import-Dienststellen"
@@ -236,7 +240,7 @@ function Import-Benutzer {
   }
   ##cleanup
   Remove-Variable -Name i
-  Stop-Process -Name EXCEL
+  Stop-Process -Name EXCEL -Force
 
   Write-Progress -Status "Processing done" -PercentComplete 100 -Activity "Building Array with Data for Benutzer"
   Write-Log -Message "end function Import-Benutzer"
@@ -252,6 +256,11 @@ If($Debug){
   Write-Log -Message "Debug Mode is:                   enabled"
 } else {
   Write-Log -Message "Debug Mode is:                   disabled"
+}
+If($WhatIf){
+  Write-Log -Message "WhatIf Mode is:                  enabled"
+} else {
+  Write-Log -Message "WhatIf Mode is:                  disabled"
 }
 Write-Log -Message "PowerShell Script Path is:       $here"
 Write-Log -Message "XML Config file is:              $XMLPath"
@@ -296,8 +305,8 @@ Write-Log -Message "start region Telefonliste"
 
 Write-Log -Message "Benutzerdaten aus XLS Sheet einlesen"
 $UserListPath = Join-Path -Path $here -ChildPath $Benutzerliste
-$ULTemp = Import-Benutzer -UserList $UserListPath
-Write-Log -Message ('Es wurden {0} Benutzer Eintraege gefunden' -f $ULTemp.count)
+$UserList = Import-Benutzer -UserList $UserListPath
+Write-Log -Message ('Es wurden {0} Benutzer Eintraege gefunden' -f $UserList.count)
 
 Write-Log -Message "Dienststellen aus Telefonliste einlesen"
 $PhoneListPath = Join-Path -Path $here -ChildPath $Telefonliste
@@ -386,29 +395,18 @@ foreach ($ADUser in $ADUsers) {
   [array]$FAGroups = @()
   $FAGroups = Get-ADPrincipalGroupMembership -Identity $ADUser.samAccountName | Where-Object { $_.Name -like $SearchString }
   if ((($FaGroups.count) -ne "0")) {
-    if ((($FAGroups.count) -gt "1")) {
-      <#User is assigned to more than one FA, put to mailing list#>
-      Write-Log -Message ('::Error:: User {0} is assigned to more than one FA' -f $ADUser.name)
-      $MailingUsers += $ADUser
-    } else {
-      $FAIDGroup = Get-FAIDGroup -Name $FAGroups.name
-      if ($FAIDGroup -eq "0000") {
-        <#group definition is empty. Put user to mailing list#>
-        Write-Log -Message ('::Error:: User {0}; group {1} description field is empty' -f $ADUser.name,$FAGroups.name)
-        $MailingUsers += $ADUser
-      } elseif ($FAIDGroup -eq "0001") {
-        <#group definition contains no numbers. Put user to mailing list#>
-        Write-Log -Message ('::Error:: User {0}; group {1} description field contains no FA ID' -f $ADUser.name,$FAGroups.name)
-        $MailingUsers += $ADUser
-      } else {
-        $FAUsers += $ADUser
-      }
-    }
+    <# Action to perform if the condition is true #>
+    $FaUsers += $ADUser
   }
   Remove-Variable -Name FAGroups
+  #Remove-Variable -Name FAIDGroup
   Remove-Variable -Name ADUser
-  Remove-Variable -Name CurrentItem
+  Remove-Variable -Name CurrentItem  
 }
+
+##cleanup
+Remove-Variable -Name SearchString
+
 Write-Progress -Status "Processing Done" -PercentComplete 100 -Activity "Filtered $FoundUsers Users found in previous step"
 Write-Log -Message ('$FAUsers contains {0} Users for further processing' -f $FAUsers.Count)
 Write-Log -Message ('$MailingUsers contains {0} Users for further processing' -f $MailingUsers.Count)
@@ -427,29 +425,39 @@ foreach ($User in $collection) {
   $Counter++
   $Total = $collection.Count
   $percentComplete = ($Counter / $Total) * 100
-  $CurrentItem = $User.name
+  #$CurrentItem = $User.name
   Write-Progress -Status "Processing AD object of $CurrentItem" -PercentComplete $percentComplete -Activity "Updating location information of $Total AD Objects"
-  <# $User is the current item #>
-  $FAID = $CurrentItem.Substring(0,4)
-  #$FAID = 1281 <#for debugging only#>
+  
+  ##add Email to User Object
+  $User = Get-ADUser -Identity $User.samAccountName -Properties EmailAddress
+  ##determine FA ID
+  $DstTemp = $UserList | Where-Object { $_.Mail -eq $User.EmailAddress}
+  $FAID = $DstTemp.DstID
+  
+  ##Lookup FA Informations
   $FA = $Dienststellen | Where-Object { $_.ID -eq $FAID}
   
-  <#check if duplicate FAID entries exist for User#>
-  if ($Fa.Count -ne $null) {
-    <# Action to perform if the condition is true, duplicate FAID exist #>
-    Write-Log -Message ('::Error:: FA Address cannot be determined for User {0}, Multiple entries for FA {1}' -f $User.name,$FAID)
+  if ($FAID -eq $null) {
+    <# Action to perform if the condition is true #>
+    Write-Log -Message ('User {0} has no FA assigned. Skip updating AD Object' -f $User)
     $MailingUsers += $User
   } else {
-    <# Action to perform if no duplicate FAID exist#>
-    Set-ADUser -Identity $User.SamAccountName -StreetAddress $FA.Street -City $FA.City -PostalCode $FA.PostalCode
-    $ProcessedUsers += $User
+    <# Action when all if and elseif conditions are false #>
+    If (!($WhatIf)){
+      Set-ADUser -Identity $User.SamAccountName -StreetAddress $FA.Street -City $FA.City -PostalCode $FA.PostalCode
+    }
+    $ProcessedUsers += $User  
   }
-  Remove-Variable -Name CurrentItem
+  
+  Remove-Variable -Name DstTemp
   Remove-Variable -Name FAID
   Remove-Variable -Name FA
   Remove-Variable -Name User
-  Remove-Variable -Name Counter
+  Remove-Variable -Name Total
 }
+
+Remove-Variable -Name Counter
+
 Write-Progress -Status "Processing AD objects done" -PercentComplete 100 -Activity "Updated location information of $Total AD Objects"
 if ($Debug) {
   <# Action to perform if the condition is true #>
