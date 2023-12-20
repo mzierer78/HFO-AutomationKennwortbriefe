@@ -187,6 +187,61 @@ function Import-Dienststellen {
   Write-Log -Message "end function Import-Dienststellen"
   Return $Dienststellen
 }
+
+function Import-Benutzer {
+  param (
+    $UserList
+  )
+  Write-Log -Message "start function Import-Benutzer"
+  <#use locally installed excel to access data#>
+  <#create a com object for the application#>
+  $ExcelObj = New-Object -ComObject Excel.Application
+  $ExcelObj.Visible = $false
+
+  <#open data source#>
+  $ExcelWorkBook = $ExcelObj.Workbooks.open($UserList)
+
+  <#select sheet containing FA Address list#>
+  $ExcelWorkSheet = $ExcelWorkBook.Sheets.Item("Kontaktdaten20231215")
+  $UsedRange = $ExcelWorkSheet.UsedRange
+  $UsedRows = $usedRange.Rows.Count
+
+  $Benutzer = @()
+  for ($i = 2; $i -le $UsedRows; $i++) {
+    <# Action that will repeat until the condition is met #>
+    $ColumnA = "A" + $i
+    $ColumnD = "D" + $i
+    $UsrMail = $ExcelWorkSheet.Range($ColumnA).Text
+    $UsrDstID = $ExcelWorkSheet.Range($ColumnD).Text
+    
+    $percentComplete = ($i / $UsedRows) * 100
+    $CurrentItem = $UsrMail
+    Write-Progress -Status "Processing item $CurrentItem" -PercentComplete $percentComplete -Activity "Building Array with Data for Benutzer"
+
+    $Usr = New-Object psobject -Property @{
+      Mail = $UsrMail
+      DstID = $UsrDstID
+    }
+
+    if ($UsrMail -ne "") {
+      <# Only add to array if Variable contains data #>
+      $Benutzer += $Usr
+    }
+
+    Remove-Variable -Name ColumnA
+    Remove-Variable -Name ColumnD
+    Remove-Variable -Name UsrMail
+    Remove-Variable -Name UsrDstID
+    Remove-Variable -Name Usr
+  }
+  ##cleanup
+  Remove-Variable -Name i
+  Stop-Process -Name EXCEL
+
+  Write-Progress -Status "Processing done" -PercentComplete 100 -Activity "Building Array with Data for Benutzer"
+  Write-Log -Message "end function Import-Benutzer"
+  Return $Benutzer
+}
 #endregion
 
 #region write basic infos to log
@@ -218,6 +273,7 @@ Write-Log -Message "start region read data from XML file"
 [string]$SearchPathADUser = $DataSource.Configuration.SearchPathADUser.Name
 [string]$SearchStringFA = $DataSource.Configuration.SearchStringFA.Name
 [string]$Telefonliste = $DataSource.Configuration.Telefonliste.FileName
+[string]$Benutzerliste = $DataSource.Configuration.Benutzerliste.FileName
 
 # dump Variables used:
 Write-Log -Message "Dumping read values to Log..."
@@ -230,12 +286,18 @@ Write-Log -Message ('MaxObjects:                      {0}' -f $MaxObjects)
 Write-Log -Message ('SearchPathADUser:                {0}' -f $SearchPathADUser)
 Write-Log -Message ('SearchStringFA:                  {0}' -f $SearchStringFA)
 Write-Log -Message ('Telefonliste:                    {0}' -f $Telefonliste)
+Write-Log -Message ('Benutzerliste:                   {0}' -f $Benutzerliste)
 Write-Log -Message "end region read data from XML file"
 #endregion
 
 #region Telefonliste
 Write-Log -Message "::"
 Write-Log -Message "start region Telefonliste"
+
+Write-Log -Message "Benutzerdaten aus XLS Sheet einlesen"
+$UserListPath = Join-Path -Path $here -ChildPath $Benutzerliste
+$ULTemp = Import-Benutzer -UserList $UserListPath
+Write-Log -Message ('Es wurden {0} Benutzer Eintraege gefunden' -f $ULTemp.count)
 
 Write-Log -Message "Dienststellen aus Telefonliste einlesen"
 $PhoneListPath = Join-Path -Path $here -ChildPath $Telefonliste

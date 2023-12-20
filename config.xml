@@ -8,4 +8,5 @@
     <SearchPathADUser Name="OU=Benutzer,OU=HFO,DC=itshessen,DC=hessen,DC=de" />
     <SearchStringFA Name="sicHFOmitarbfa" />
     <Telefonliste FileName="Telefonverzeichnis.xls" />
+    <Benutzerliste FileName="User_HF.xlsx" />
 </Configuration>
