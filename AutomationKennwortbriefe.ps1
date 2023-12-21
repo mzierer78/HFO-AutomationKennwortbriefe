@@ -369,9 +369,55 @@ catch {
 }
 
 Write-Log -Message ('Build Array $ADUsers by resolving group members of {0}' -f $GroupUser)
-[array]$ADUsers = @()
-#$ADUsers = Get-ADUser -Filter * -SearchBase $SearchPathADUser
-$ADUsers = Get-ADGroupMember -Identity $GroupUser | Select-Object -First $MaxObjects
+[array]$ADUsersTmp1 = @()
+[array]$ADUsersTmp2 = @()
+[array]$ADUsersTmp3 = @()
+[array]$ADUsersTmp4 = @()
+$ADUsersTmp1 = Get-ADGroupMember -Identity $GroupUser | Select-Object -First $MaxObjects
+
+Write-Log -Message "Add eMail address to users"
+$collection = $ADUsersTmp1
+foreach ($currentItemName in $collection) {
+  <# $currentItemName is the current item #>
+  $currentItemName = Get-ADUser -Identity $currentItemName.samAccountName -Properties EmailAddress
+  $ADUsersTmp2 += $currentItemName
+}
+
+Remove-Variable -Name collection
+Remove-Variable -Name ADUsersTmp1
+
+Write-Log -Message "Filter disabled Users"
+$collection = $ADUsersTmp2
+foreach ($currentItemName in $collection) {
+  <# $currentItemName is the current item #>
+  if ($currentItemName.enabled -eq $true) {
+    <# Action to perform if the condition is true #>
+    $ADUsersTmp3 += $currentItemName
+  }
+
+  Remove-Variable -Name currentItemName
+}
+
+Remove-Variable -Name collection
+Remove-Variable -Name ADUsersTmp2
+
+Write-Log -Message "Filter Training Users"
+$collection = $ADUsersTmp3
+foreach ($currentItemName in $collection) {
+  <# $currentItemName is the current item #>
+  if ($currentItemName.GivenName -ne "Hessen-Forst") {
+    <# Action to perform if the condition is true #>
+    $ADUsersTmp4 += $currentItemName
+  }
+
+  Remove-Variable -Name currentItemName
+}
+
+Remove-Variable -Name collection
+Remove-Variable -Name ADUsersTmp3
+$ADUsers = $ADUsersTmp4
+Remove-Variable -Name ADUsersTmp4
+
 Write-Log -Message ('finished resolving users. Array contains {0} users' -f $ADUsers.Count)
 if ($Debug) {
   <# Action to perform if the condition is true #>
@@ -429,7 +475,7 @@ foreach ($User in $collection) {
   Write-Progress -Status "Processing AD object of $CurrentItem" -PercentComplete $percentComplete -Activity "Updating location information of $Total AD Objects"
   
   ##add Email to User Object
-  $User = Get-ADUser -Identity $User.samAccountName -Properties EmailAddress
+  #$User = Get-ADUser -Identity $User.samAccountName -Properties EmailAddress
   ##determine FA ID
   $DstTemp = $UserList | Where-Object { $_.Mail -eq $User.EmailAddress}
   $FAID = $DstTemp.DstID
