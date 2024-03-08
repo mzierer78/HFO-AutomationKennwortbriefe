@@ -196,7 +196,7 @@ function Import-Benutzer {
   param (
     $UserList
   )
-  Write-Log -Message "start function Import-Benutzer"
+  Write-Log -Message "start function Import-SAP HR Benutzer"
   <#use locally installed excel to access data#>
   <#create a com object for the application#>
   $ExcelObj = New-Object -ComObject Excel.Application
@@ -220,7 +220,7 @@ function Import-Benutzer {
     
     $percentComplete = ($i / $UsedRows) * 100
     $CurrentItem = $UsrMail
-    Write-Progress -Status "Processing item $CurrentItem" -PercentComplete $percentComplete -Activity "Building Array with Data for Benutzer"
+    Write-Progress -Status "Processing item $CurrentItem" -PercentComplete $percentComplete -Activity "Building Array with SAP HR Data"
 
     $Usr = New-Object psobject -Property @{
       Mail = $UsrMail
@@ -242,8 +242,8 @@ function Import-Benutzer {
   Remove-Variable -Name i
   Stop-Process -Name EXCEL -Force
 
-  Write-Progress -Status "Processing done" -PercentComplete 100 -Activity "Building Array with Data for Benutzer"
-  Write-Log -Message "end function Import-Benutzer"
+  Write-Progress -Status "Processing done" -PercentComplete 100 -Activity "Building Array with SAP HR Data"
+  Write-Log -Message "end function Import-SAP HR Benutzer"
   Return $Benutzer
 }
 #endregion
@@ -303,10 +303,10 @@ Write-Log -Message "end region read data from XML file"
 Write-Log -Message "::"
 Write-Log -Message "start region Telefonliste"
 
-Write-Log -Message "Benutzerdaten aus XLS Sheet einlesen"
+Write-Log -Message "SAP HR Daten aus XLS Sheet einlesen"
 $UserListPath = Join-Path -Path $here -ChildPath $Benutzerliste
 $UserList = Import-Benutzer -UserList $UserListPath
-Write-Log -Message ('Es wurden {0} Benutzer Eintraege gefunden' -f $UserList.count)
+Write-Log -Message ('Es wurden {0} SAP HR Eintraege gefunden' -f $UserList.count)
 
 Write-Log -Message "Dienststellen aus Telefonliste einlesen"
 $PhoneListPath = Join-Path -Path $here -ChildPath $Telefonliste
@@ -373,7 +373,7 @@ Write-Log -Message ('Build Array $ADUsers by resolving group members of {0}' -f 
 [array]$ADUsersTmp2 = @()
 [array]$ADUsersTmp3 = @()
 [array]$ADUsersTmp4 = @()
-$ADUsersTmp1 = Get-ADGroupMember -Identity $GroupUser | Select-Object -First $MaxObjects
+$ADUsersTmp1 = Get-ADGroupMember -Identity $GroupUser | Where-Object {$_.ObjectClass -eq "user"} | Select-Object -First $MaxObjects
 
 Write-Log -Message "Add eMail address to users"
 $collection = $ADUsersTmp1
@@ -423,6 +423,45 @@ if ($Debug) {
   <# Action to perform if the condition is true #>
   Dump-Csv -Data $ADUsers -FileName "ADUsers.csv"
 }
+
+Write-Log -Message ('Build Array $FAUsers by checking for group membership in {0}' -f $SearchStringFA)
+[array]$FAGroups = @()
+
+##get all groups matching search string
+Write-Log -Message ('Getting all groups containing {0} from AD' -f $SearchStringFA)
+$SearchString = $SearchStringFA + "*"
+$FAGroups = Get-ADGroup -Filter ('Name -like "{0}"' -f $SearchString)
+Remove-Variable -Name SearchString
+Write-Log -Message ('{0} FA Groups found' -f $FAGroups.count)
+
+##query users from each group and put them into an array
+Write-Log -Message "enumerating all group members"
+$FAUsers = @()
+$CheckBase = $ADUsers | Select-Object -ExpandProperty SamAccountName
+$collection = $FAGroups
+foreach ($currentItemName in $collection) {
+  <# $currentItemName is the current item #>
+  [array]$GroupUsers = @()
+  $GroupUsers = Get-ADGroupMember -Identity $currentItemName | Where-Object {$_.ObjectClass -eq "user"}
+  foreach ($GroupUser in $GroupUsers) {
+    <# $currentItemName is the current item #>
+    if ($ADUsers -contains $GroupUser) {
+      <# Action to perform if the condition is true #>
+      if ($FAUsers -inotcontains $GroupUser) {
+        <# Action to perform if the condition is true #>
+        $FAUsers += $GroupUser
+      }
+    }
+    
+    Remove-Variable -Name GroupUser
+  }
+
+  Remove-Variable -Name currentItemName
+  #Remove-Variable -Name GroupUsers
+}
+
+Write-Log -Message ('{0} FAUsers found for further processing' -f $FAUsers.count)
+Remove-Variable -Name collection
 
 Write-Log -Message ('Build Array $FAUsers by checking for group membership in {0}' -f $SearchStringFA)
 [array]$FAUsers = @()

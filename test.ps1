@@ -1,3 +1,47 @@
+$SearchStringFA = "sicHFOmitarbfa"
+#region query AD Users
+Write-Log -Message "::"
+Write-Log -Message "start region query AD Users"
+
+Write-Log -Message "try loading ActiveDirectory Module"
+try {
+  Import-Module ActiveDirectory
+  Write-Log -Message "PowerShell Module ActiveDirectory successfully loaded"
+}
+catch {
+  Write-Log -Message "Loading PowerShell Module ActiveDirectory failed"
+}
+
+Write-Log -Message "enumerate all FA Users"
+$SearchString = $SearchStringFA + "*"
+[array]$FAGroups = @()
+
+##get all groups matching search string
+$FAGroups = Get-ADGroup -Filter ('Name -like "{0}"' -f $SearchString)
+
+##query users from each group and put them into an array
+$FAUsers = @()
+$collection = $FAGroups
+foreach ($currentItemName in $collection) {
+  <# $currentItemName is the current item #>
+  $GroupUsers = Get-ADGroupMember -Identity $currentItemName | Where-Object {$_.ObjectClass -eq "user"}
+  foreach ($GroupUser in $GroupUsers) {
+    <# $currentItemName is the current item #>
+    if ($FAUsers -notcontains $GroupUser) {
+      <# Action to perform if the condition is true #>
+      $FAUsers += $GroupUser
+
+      Remove-Variable -Name GroupUser
+    }
+  }
+
+  Remove-Variable -Name currentItemName
+  Remove-Variable -Name GroupUsers
+}
+
+Remove-Variable -Name FAUsers
+Remove-Variable -Name FAGroups
+
 Write-Progress -Status "Processing item $CurrentItem" -PercentComplete $percentComplete -Activity "Filtering $FoundUsers Users found in previous step"
   $FAIDUser = $CurrentItem.Substring(0,4)
   [array]$FAGroups = @()
